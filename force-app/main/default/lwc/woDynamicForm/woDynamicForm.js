@@ -20,6 +20,12 @@ const GENERIC_FORM_FIELDS_QUERY = gql`
               Section__c {
                 value
               }
+              Section_Order__c {
+                value
+              }
+              Field_Order__c {
+                value
+              }
             }
           }
         }
@@ -36,6 +42,11 @@ export default class WoDynamicForm extends LightningElement {
     @track loading = true;
     @track saving = false;
     @track schemaError;
+
+    // Review child panel state
+    @track showReview = false;
+    @track reviewPayload;
+    @track showKeepEmoji = false;
 
     /* -------------------------------
        Load Dynamic Schema (GraphQL -> Generic_Form__mdt)
@@ -62,12 +73,19 @@ export default class WoDynamicForm extends LightningElement {
                 if (!node) return;
 
                 const sectionName = node?.Section__c?.value || 'Other';
+                const sectionOrder = Number(node?.Section_Order__c?.value ?? Number.POSITIVE_INFINITY);
                 if (!grouped.has(sectionName)) {
-                    grouped.set(sectionName, []);
+                    grouped.set(sectionName, { order: sectionOrder, fields: [] });
+                } else {
+                    // If multiple nodes provide different section order numbers for same section, keep the lowest
+                    const existing = grouped.get(sectionName);
+                    const newOrder = Math.min(existing.order ?? Number.POSITIVE_INFINITY, sectionOrder);
+                    existing.order = newOrder;
                 }
 
                 const label = node?.Asset_Attribute__c?.value;
                 const typeRaw = (node?.Asset_Type__c?.value || '').toLowerCase();
+                const fieldOrder = Number(node?.Field_Order__c?.value ?? Number.POSITIVE_INFINITY);
 
                 const isText = ['text', 'string'].includes(typeRaw);
                 const isTextArea = ['textarea', 'longtext'].includes(typeRaw);
@@ -97,7 +115,7 @@ export default class WoDynamicForm extends LightningElement {
                         .map(v => ({ label: v, value: v }));
                 }
 
-                grouped.get(sectionName).push({
+                const fieldDef = {
                     section: sectionName,
                     fieldApiName: label, // using provided attribute label as display/key
                     fieldType: typeRaw,
@@ -112,11 +130,46 @@ export default class WoDynamicForm extends LightningElement {
                     isPicklist,
                     isOther,
 
-                    value: null
-                });
+                    value: null,
+                    fieldOrder: isNaN(fieldOrder) ? Number.POSITIVE_INFINITY : fieldOrder
+                };
+
+                grouped.get(sectionName).fields.push(fieldDef);
             });
 
-            this.sections = Array.from(grouped.entries(), ([name, fields]) => ({ name, fields }));
+            // Sort fields within each section: by Field_Order__c asc, then alphabetical by fieldApiName
+            for (const [name, entry] of grouped.entries()) {
+                entry.fields.sort((a, b) => {
+                    const ao = a.fieldOrder ?? Number.POSITIVE_INFINITY;
+                    const bo = b.fieldOrder ?? Number.POSITIVE_INFINITY;
+                    if (ao !== bo) return ao - bo;
+                    const an = (a.fieldApiName || '').toString().toLowerCase();
+                    const bn = (b.fieldApiName || '').toString().toLowerCase();
+                    if (an < bn) return -1;
+                    if (an > bn) return 1;
+                    return 0;
+                });
+            }
+
+            // Build and sort sections: by Section_Order__c asc, then alphabetical by section name
+            const sectionList = Array.from(grouped.entries(), ([name, entry]) => ({
+                name,
+                fields: entry.fields,
+                sectionOrder: isNaN(entry.order) ? Number.POSITIVE_INFINITY : entry.order
+            }));
+
+            sectionList.sort((a, b) => {
+                const ao = a.sectionOrder ?? Number.POSITIVE_INFINITY;
+                const bo = b.sectionOrder ?? Number.POSITIVE_INFINITY;
+                if (ao !== bo) return ao - bo;
+                const an = (a.name || '').toString().toLowerCase();
+                const bn = (b.name || '').toString().toLowerCase();
+                if (an < bn) return -1;
+                if (an > bn) return 1;
+                return 0;
+            });
+
+            this.sections = sectionList;
             this.schemaError = undefined;
         } catch (e) {
             this.schemaError = e?.message;
@@ -150,6 +203,99 @@ export default class WoDynamicForm extends LightningElement {
         });
         return model;
     }
+
+    // Build the full review JSON payload from current UI state
+    buildReviewPayload() {
+        const payload = {
+            sections: this.sections.map(sec => {
+                return {
+                    name: sec.name,
+                    fields: sec.fields.map(f => {
+                        const el = this.template.querySelector(`[data-field-name="${f.fieldApiName}"]`);
+                        let val = f.value ?? null;
+                        if (el) {
+                            val = el.type === 'checkbox' ? el.checked : (el.value ?? el?.dataset?.value ?? null);
+                        }
+                        return {
+                            section: f.section,
+                            fieldApiName: f.fieldApiName,
+                            fieldType: f.fieldType,
+                            comboboxOptions: f.comboboxOptions,
+                            isText: f.isText,
+                            isTextArea: f.isTextArea,
+                            isNumber: f.isNumber,
+                            isDate: f.isDate,
+                            isDateTime: f.isDateTime,
+                            isCheckbox: f.isCheckbox,
+                            isPicklist: f.isPicklist,
+                            isOther: f.isOther,
+                            value: val
+                        };
+                    })
+                };
+            })
+        };
+
+        // Console for visibility (as requested)
+        // eslint-disable-next-line no-console
+        console.log('Parent sending review JSON', JSON.stringify(payload));
+        return payload;
+    }
+
+    // Open child review with JSON
+    handleSendInfo = () => {
+        this.showKeepEmoji = false; // reset tick on new review
+        this.reviewPayload = this.buildReviewPayload();
+        this.showReview = true;
+    };
+
+    // Handle overwrite from child - apply values back to inputs/state
+    handleReviewOverwrite = (evt) => {
+        const updated = evt?.detail;
+        // eslint-disable-next-line no-console
+        console.log('Parent received updated JSON from child', JSON.stringify(updated));
+
+        if (!updated?.sections) {
+            this.showReview = false;
+            return;
+        }
+
+        // Apply values back into the visible inputs
+        updated.sections.forEach(sec => {
+            sec.fields.forEach(f => {
+                const el = this.template.querySelector(`[data-field-name="${f.fieldApiName}"]`);
+                if (!el) return;
+                if (el.type === 'checkbox') {
+                    el.checked = !!f.value;
+                } else {
+                    el.value = f.value;
+                }
+            });
+        });
+
+        // Optionally update local sections model values too
+        this.sections = this.sections.map(sec => {
+            const incomingSec = updated.sections.find(s => s.name === sec.name);
+            if (!incomingSec) return sec;
+            const newFields = sec.fields.map(f => {
+                const incomingField = incomingSec.fields.find(x => x.fieldApiName === f.fieldApiName);
+                if (!incomingField) return f;
+                return { ...f, value: incomingField.value };
+            });
+            return { ...sec, fields: newFields };
+        });
+
+        this.showReview = false;
+        this.showKeepEmoji = false;
+    };
+
+    // Handle keep from child - close child and show tick
+    handleReviewKeep = () => {
+        // eslint-disable-next-line no-console
+        console.log('Parent keep as is: no overwrite performed');
+        this.showReview = false;
+        this.showKeepEmoji = true;
+    };
 
     /* -------------------------------
        Save Handler

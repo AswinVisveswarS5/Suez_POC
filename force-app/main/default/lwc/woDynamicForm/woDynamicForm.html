@@ -22,7 +22,7 @@
                                 <template for:each={sec.fields} for:item="f">
                                     <div
                                         key={f.fieldApiName}
-                                        class="slds-col slds-size_1-of-1 slds-medium-size_1-of-2 slds-p-around_xx-small">
+                                        class="slds-col slds-size_1-of-1 slds-medium-size_1-of-1 slds-large-size_1-of-1 slds-p-around_xx-small">
                                         
                                         <!-- Render different input types based on fieldType -->
                                         <template if:true={f.isText}>
@@ -96,14 +96,34 @@
             </lightning-accordion>
         </template>
 
-        <div class="footer slds-m-top_small">
-            <lightning-button
-                variant="brand"
-                label="Save"
-                onclick={handleSave}
-                disabled={saving}>
-            </lightning-button>
+        <div class="footer slds-m-top_small slds-grid slds-wrap slds-grid_align-spread slds-grid_vertical-align-center">
+            <div class="slds-col">
+                <lightning-button
+                    variant="neutral"
+                    label="Send Info"
+                    onclick={handleSendInfo}
+                    disabled={saving}>
+                </lightning-button>
+                <span if:true={showKeepEmoji} class="slds-m-left_small" title="Kept as is">✅</span>
+            </div>
+            <div class="slds-col">
+                <lightning-button
+                    variant="brand"
+                    label="Save"
+                    onclick={handleSave}
+                    disabled={saving}>
+                </lightning-button>
+            </div>
         </div>
+
+        <!-- Inline child panel (offline-friendly) -->
+        <template if:true={showReview}>
+            <c-review-form
+                review-json={reviewPayload}
+                onreviewoverwrite={handleReviewOverwrite}
+                onreviewkeep={handleReviewKeep}>
+            </c-review-form>
+        </template>
 
     </template>
 </template>
