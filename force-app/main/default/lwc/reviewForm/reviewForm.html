@@ -1,0 +1,141 @@
+<template>
+    <template if:true={open}>
+        <section class="slds-m-around_small slds-card">
+            <div class="slds-card__header slds-grid slds-p-around_small">
+                <header class="slds-media slds-media_center slds-has-flexi-truncate">
+                    <div class="slds-media__figure">
+                        <span class="slds-icon_container slds-icon-standard-feedback" title="Review Form">
+                            <svg class="slds-icon slds-icon_small" aria-hidden="true">
+                                <use xlink:href="/assets/icons/standard-sprite/svg/symbols.svg#feedback"></use>
+                            </svg>
+                        </span>
+                    </div>
+                    <div class="slds-media__body">
+                        <h2 class="slds-card__header-title">
+                            <span class="slds-truncate" title="Review Form">Review Form</span>
+                        </h2>
+                    </div>
+                </header>
+            </div>
+
+            <div class="slds-card__body slds-p-horizontal_small">
+                <template if:true={localEditable}>
+                    <template for:each={localEditable.sections} for:item="sec">
+                        <div key={sec.name} class="slds-p-vertical_small">
+                            <div class="slds-text-title_bold slds-p-bottom_x-small">{sec.name}</div>
+                            <div class="slds-grid slds-wrap slds-gutters">
+                                <template for:each={sec.fields} for:item="f">
+                                    <div
+                                        key={f.fieldApiName}
+                                        class="slds-col slds-size_1-of-1 slds-p-around_xx-small">
+                                        
+                                        <!-- Mirror parent input types, bound to localEditable -->
+                                        <template if:true={f.isText}>
+                                            <lightning-input
+                                                type="text"
+                                                label={f.fieldApiName}
+                                                data-field-name={f.fieldApiName}
+                                                data-section-name={sec.name}
+                                                value={f.value}
+                                                onchange={handleFieldChange}>
+                                            </lightning-input>
+                                        </template>
+
+                                        <template if:true={f.isTextArea}>
+                                            <lightning-textarea
+                                                label={f.fieldApiName}
+                                                data-field-name={f.fieldApiName}
+                                                data-section-name={sec.name}
+                                                value={f.value}
+                                                onchange={handleFieldChange}>
+                                            </lightning-textarea>
+                                        </template>
+
+                                        <template if:true={f.isNumber}>
+                                            <lightning-input
+                                                type="number"
+                                                label={f.fieldApiName}
+                                                data-field-name={f.fieldApiName}
+                                                data-section-name={sec.name}
+                                                value={f.value}
+                                                onchange={handleFieldChange}>
+                                            </lightning-input>
+                                        </template>
+
+                                        <template if:true={f.isDate}>
+                                            <lightning-input
+                                                type="date"
+                                                label={f.fieldApiName}
+                                                data-field-name={f.fieldApiName}
+                                                data-section-name={sec.name}
+                                                value={f.value}
+                                                onchange={handleFieldChange}>
+                                            </lightning-input>
+                                        </template>
+
+                                        <template if:true={f.isDateTime}>
+                                            <lightning-input
+                                                type="datetime"
+                                                label={f.fieldApiName}
+                                                data-field-name={f.fieldApiName}
+                                                data-section-name={sec.name}
+                                                value={f.value}
+                                                onchange={handleFieldChange}>
+                                            </lightning-input>
+                                        </template>
+
+                                        <template if:true={f.isCheckbox}>
+                                            <lightning-input
+                                                type="checkbox"
+                                                label={f.fieldApiName}
+                                                data-field-name={f.fieldApiName}
+                                                data-section-name={sec.name}
+                                                checked={f.value}
+                                                onchange={handleFieldChange}>
+                                            </lightning-input>
+                                        </template>
+
+                                        <template if:true={f.isPicklist}>
+                                            <lightning-combobox
+                                                label={f.fieldApiName}
+                                                data-field-name={f.fieldApiName}
+                                                data-section-name={sec.name}
+                                                value={f.value}
+                                                options={f.comboboxOptions}
+                                                onchange={handleFieldChange}>
+                                            </lightning-combobox>
+                                        </template>
+
+                                        <template if:true={f.isOther}>
+                                            <lightning-input
+                                                type="text"
+                                                label={f.fieldApiName}
+                                                data-field-name={f.fieldApiName}
+                                                data-section-name={sec.name}
+                                                value={f.value}
+                                                onchange={handleFieldChange}>
+                                            </lightning-input>
+                                        </template>
+                                    </div>
+                                </template>
+                            </div>
+                        </div>
+                    </template>
+                </template>
+            </div>
+
+            <div class="slds-card__footer slds-p-around_small slds-text-align_right">
+                <lightning-button
+                    label="Keep as it is"
+                    onclick={handleKeep}
+                    class="slds-m-right_small">
+                </lightning-button>
+                <lightning-button
+                    variant="brand"
+                    label="Overwrite values"
+                    onclick={handleOverwrite}>
+                </lightning-button>
+            </div>
+        </section>
+    </template>
+</template>

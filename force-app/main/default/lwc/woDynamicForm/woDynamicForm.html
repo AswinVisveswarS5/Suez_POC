@@ -1,0 +1,129 @@
+<template>
+    <template if:true={loading}>
+        <lightning-spinner size="medium" alternative-text="Loading"></lightning-spinner>
+    </template>
+
+    <template if:false={loading}>
+
+        <!-- Schema Error -->
+        <template if:true={schemaError}>
+            <div class="slds-text-color_error slds-p-around_small">
+                {schemaError}
+            </div>
+        </template>
+
+        <!-- Dynamic CMD Sections -->
+        <template if:true={hasSections}>
+            <lightning-accordion allow-multiple-sections-open active-section-name="all">
+                <template for:each={sections} for:item="sec">
+                    <lightning-accordion-section key={sec.name} name={sec.name} label={sec.name}>
+                        <div class="slds-p-horizontal_small slds-p-vertical_x-small">
+                            <div class="slds-grid slds-wrap slds-gutters">
+                                <template for:each={sec.fields} for:item="f">
+                                    <div
+                                        key={f.fieldApiName}
+                                        class="slds-col slds-size_1-of-1 slds-medium-size_1-of-1 slds-large-size_1-of-1 slds-p-around_xx-small">
+                                        
+                                        <!-- Render different input types based on fieldType -->
+                                        <template if:true={f.isText}>
+                                            <lightning-input
+                                                type="text"
+                                                label={f.fieldApiName}
+                                                data-field-name={f.fieldApiName}>
+                                            </lightning-input>
+                                        </template>
+                                        
+                                        <template if:true={f.isTextArea}>
+                                            <lightning-textarea
+                                                label={f.fieldApiName}
+                                                data-field-name={f.fieldApiName}>
+                                            </lightning-textarea>
+                                        </template>
+                                        
+                                        <template if:true={f.isNumber}>
+                                            <lightning-input
+                                                type="number"
+                                                label={f.fieldApiName}
+                                                data-field-name={f.fieldApiName}>
+                                            </lightning-input>
+                                        </template>
+                                        
+                                        <template if:true={f.isDate}>
+                                            <lightning-input
+                                                type="date"
+                                                label={f.fieldApiName}
+                                                data-field-name={f.fieldApiName}>
+                                            </lightning-input>
+                                        </template>
+                                        
+                                        <template if:true={f.isDateTime}>
+                                            <lightning-input
+                                                type="datetime"
+                                                label={f.fieldApiName}
+                                                data-field-name={f.fieldApiName}>
+                                            </lightning-input>
+                                        </template>
+                                        
+                                        <template if:true={f.isCheckbox}>
+                                            <lightning-input
+                                                type="checkbox"
+                                                label={f.fieldApiName}
+                                                data-field-name={f.fieldApiName}>
+                                            </lightning-input>
+                                        </template>
+                                        
+                                        <template if:true={f.isPicklist}>
+                                            <lightning-combobox
+                                                label={f.fieldApiName}
+                                                data-field-name={f.fieldApiName}
+                                                options={f.comboboxOptions}>
+                                            </lightning-combobox>
+                                        </template>
+                                        
+                                        <template if:true={f.isOther}>
+                                            <lightning-input
+                                                type="text"
+                                                label={f.fieldApiName}
+                                                data-field-name={f.fieldApiName}>
+                                            </lightning-input>
+                                        </template>
+                                    </div>
+                                </template>
+                            </div>
+                        </div>
+                    </lightning-accordion-section>
+                </template>
+            </lightning-accordion>
+        </template>
+
+        <div class="footer slds-m-top_small slds-grid slds-wrap slds-grid_align-spread slds-grid_vertical-align-center">
+            <div class="slds-col">
+                <lightning-button
+                    variant="neutral"
+                    label="Send Info"
+                    onclick={handleSendInfo}
+                    disabled={saving}>
+                </lightning-button>
+                <span if:true={showKeepEmoji} class="slds-m-left_small" title="Kept as is">✅</span>
+            </div>
+            <div class="slds-col">
+                <lightning-button
+                    variant="brand"
+                    label="Save"
+                    onclick={handleSave}
+                    disabled={saving}>
+                </lightning-button>
+            </div>
+        </div>
+
+        <!-- Inline child panel (offline-friendly) -->
+        <template if:true={showReview}>
+            <c-review-form
+                review-json={reviewPayload}
+                onreviewoverwrite={handleReviewOverwrite}
+                onreviewkeep={handleReviewKeep}>
+            </c-review-form>
+        </template>
+
+    </template>
+</template>
