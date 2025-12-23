@@ -1,0 +1,17 @@
+<template>
+    <li class="tree-node">
+        <div class="node-label" onclick={handleClick}>
+            <template if:true={hasChildren}>
+                <span class="toggle" onclick={toggleExpand}>{toggleSymbol}</span>
+            </template>
+            {node.label}
+        </div>
+        <template if:true={expanded}>
+            <ul class="children">
+                <template for:each={node.items} for:item="child">
+                    <c-fsc_tree-node key={child.name} node={child} onnodeclick={handleClick}></c-fsc_tree-node>
+                </template>
+            </ul>
+        </template>
+    </li>
+</template>

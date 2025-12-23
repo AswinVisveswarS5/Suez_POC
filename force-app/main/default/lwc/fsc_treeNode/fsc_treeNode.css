@@ -1,0 +1,36 @@
+.tree-node {
+    list-style-type: none;
+    margin: 5px;
+    padding: 0;
+}
+
+.node-label {
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    padding: 5px 10px;
+    margin: 2px 0;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    background-color: #f9f9f9;
+    user-select: none;
+    transition: background-color 0.2s, border-color 0.2s;
+}
+
+.node-label:hover {
+    background-color: #e6f0ff;
+    border-color: #90b0ff;
+}
+
+.toggle {
+    display: inline-block;
+    width: 1em;
+    font-weight: bold;
+    margin-right: 5px;
+    text-align: center;
+}
+
+.children {
+    margin-left: 45px; /* indent child nodes */
+    padding-left: 0;
+}
