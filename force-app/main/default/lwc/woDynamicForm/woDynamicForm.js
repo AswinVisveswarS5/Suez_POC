@@ -26,6 +26,12 @@ const GENERIC_FORM_FIELDS_QUERY = gql`
               Field_Order__c {
                 value
               }
+              Section_Criteria__c {
+                value
+              }
+              Field_Criteria__c {
+                value
+              }
             }
           }
         }
@@ -68,12 +74,132 @@ export default class WoDynamicForm extends LightningElement {
             const edges = data?.uiapi?.query?.Generic_Form__mdt?.edges || [];
             const grouped = new Map();
 
+            // Utility: parse multi-line or semicolon-delimited criteria into atomic rule strings
+            const splitCriteria = (raw) => {
+                if (!raw) return [];
+                return raw
+                    .split(/\r?\n|;/)
+                    .map(s => s.trim())
+                    .filter(s => s.length > 0);
+            };
+
+            // Utility: parse single atomic rule like "1-1{Yes}" or "1-2{>=10}"
+            // Returns { secIdx, fldIdx, op, expected } or null if invalid
+            const parseAtomicRule = (rule) => {
+                // Match like:  1-1{Yes}  |  2-3{>=10}  |  1-2{=No}
+                // Capture indices and content inside braces
+                const m = rule.match(/^(\d+)-(\d+)\s*\{\s*([!<>=~]*)([^}]*)\s*\}$/);
+                if (!m) return null;
+                const secIdx = parseInt(m[1], 10);
+                const fldIdx = parseInt(m[2], 10);
+                let op = (m[3] || '').trim();
+                let expected = (m[4] || '').trim();
+
+                // Default operator to equality if omitted
+                if (!op) op = '=';
+
+                // Remove optional wrapping quotes in expected
+                if ((expected.startsWith("'") && expected.endsWith("'")) || (expected.startsWith('"') && expected.endsWith('"'))) {
+                    expected = expected.substring(1, expected.length - 1);
+                }
+                return { secIdx, fldIdx, op, expected };
+            };
+
+            // Utility: compare actual vs expected with operator
+            const compareByOp = (actual, op, expected) => {
+                // Normalize strings
+                const as = (actual ?? '').toString();
+                const es = (expected ?? '').toString();
+
+                // Try number comparison when op is numeric
+                const numericOps = ['>', '>=', '<', '<='];
+                if (numericOps.includes(op)) {
+                    const an = Number(actual);
+                    const en = Number(expected);
+                    if (Number.isNaN(an) || Number.isNaN(en)) return false;
+                    switch (op) {
+                        case '>': return an > en;
+                        case '>=': return an >= en;
+                        case '<': return an < en;
+                        case '<=': return an <= en;
+                        default: return false;
+                    }
+                }
+
+                // Equality / inequality (case insensitive for common Yes/No)
+                if (op === '=' || op === '==') {
+                    return as.toLowerCase() === es.toLowerCase();
+                }
+                if (op === '!=') {
+                    return as.toLowerCase() !== es.toLowerCase();
+                }
+
+                // Contains (case-insensitive)
+                if (op === '~') {
+                    return as.toLowerCase().includes(es.toLowerCase());
+                }
+
+                // Fallback: strict equality
+                return as === es;
+            };
+
+            // Evaluate multi-atomic rules against current UI state (positional only)
+            // Returns { satisfied: boolean, details: string[] }
+            const evaluateCriteria = (rawCriteria) => {
+                const atoms = splitCriteria(rawCriteria)
+                    .map(parseAtomicRule)
+                    .filter(x => !!x);
+
+                if (atoms.length === 0) {
+                    return { satisfied: true, details: ['No criteria specified'] };
+                }
+
+                const details = [];
+                let allOk = true;
+
+                // Sections are already sorted lists. Indices are 1-based in criteria.
+                atoms.forEach((atom) => {
+                    const sIdx = atom.secIdx - 1;
+                    const fIdx = atom.fldIdx - 1;
+
+                    const section = this.sections[sIdx];
+                    if (!section) {
+                        allOk = false;
+                        details.push(`Section index ${atom.secIdx} not found`);
+                        return;
+                    }
+                    const field = section.fields[fIdx];
+                    if (!field) {
+                        allOk = false;
+                        details.push(`Field index ${atom.fldIdx} not found in section ${atom.secIdx}`);
+                        return;
+                    }
+
+                    // Read current UI value for accuracy
+                    const el = this.template?.querySelector?.(`[data-field-name="${field.fieldApiName}"]`);
+                    let actual = field.value ?? null;
+                    if (el) {
+                        actual = el.type === 'checkbox' ? el.checked : (el.value ?? el?.dataset?.value ?? null);
+                    }
+
+                    const pass = compareByOp(actual, atom.op, atom.expected);
+                    details.push(
+                        `S${atom.secIdx}-F${atom.fldIdx}: actual="${actual}" ${atom.op} "${atom.expected}" => ${pass ? 'OK' : 'FAIL'}`
+                    );
+                    if (!pass) allOk = false;
+                });
+
+                return { satisfied: allOk, details };
+            };
+
             edges.forEach(edge => {
                 const node = edge?.node;
                 if (!node) return;
 
                 const sectionName = node?.Section__c?.value || 'Other';
                 const sectionOrder = Number(node?.Section_Order__c?.value ?? Number.POSITIVE_INFINITY);
+                const sectionCriteriaRaw = node?.Section_Criteria__c?.value || '';
+                const fieldCriteriaRaw = node?.Field_Criteria__c?.value || '';
                 if (!grouped.has(sectionName)) {
                     grouped.set(sectionName, { order: sectionOrder, fields: [] });
                 } else {
@@ -131,7 +257,10 @@ export default class WoDynamicForm extends LightningElement {
                     isOther,
 
                     value: null,
-                    fieldOrder: isNaN(fieldOrder) ? Number.POSITIVE_INFINITY : fieldOrder
+                    fieldOrder: isNaN(fieldOrder) ? Number.POSITIVE_INFINITY : fieldOrder,
+
+                    // Criteria (field-level raw; evaluation computed after grouping/sorting)
+                    fieldCriteriaRaw
                 };
 
                 grouped.get(sectionName).fields.push(fieldDef);
@@ -155,7 +284,16 @@ export default class WoDynamicForm extends LightningElement {
             const sectionList = Array.from(grouped.entries(), ([name, entry]) => ({
                 name,
                 fields: entry.fields,
-                sectionOrder: isNaN(entry.order) ? Number.POSITIVE_INFINITY : entry.order
+                sectionOrder: isNaN(entry.order) ? Number.POSITIVE_INFINITY : entry.order,
+
+                // Section-level criteria raw (if any from any row within same section)
+                sectionCriteriaRaw: (() => {
+                    // Prefer first non-empty raw criteria across fields in this section
+                    const found = entry.fields.find(f => !!sectionCriteriaRaw || !!f.sectionCriteriaRaw);
+                    // We captured sectionCriteriaRaw per-node earlier; because multiple rows can belong to same section,
+                    // we keep the last seen (or could collect/merge). For MVP, pick the first non-empty from current node var.
+                    return sectionCriteriaRaw || '';
+                })()
             }));
 
             sectionList.sort((a, b) => {
@@ -167,6 +305,36 @@ export default class WoDynamicForm extends LightningElement {
                 if (an < bn) return -1;
                 if (an > bn) return 1;
                 return 0;
+            });
+
+            // After sorting, evaluate criteria (phase 1: positional rules only)
+            // Section criteria: evaluate against current UI state by position
+            // Field criteria: evaluate against current UI state by position
+            // We attach flags: criteriaSatisfied and criteriaDetails
+            sectionList.forEach((sec, sIdx) => {
+                // Evaluate section-level criteria if present
+                const secRaw = sec.sectionCriteriaRaw;
+                if (secRaw) {
+                    const res = evaluateCriteria(secRaw);
+                    sec.criteriaSatisfied = res.satisfied;
+                    sec.criteriaDetails = res.details;
+                } else {
+                    sec.criteriaSatisfied = true;
+                    sec.criteriaDetails = ['No criteria specified'];
+                }
+
+                // For each field, if raw exists on the field, evaluate
+                sec.fields.forEach((f, fIdx) => {
+                    const raw = f.fieldCriteriaRaw;
+                    if (raw) {
+                        const res = evaluateCriteria(raw);
+                        f.criteriaSatisfied = res.satisfied;
+                        f.criteriaDetails = res.details;
+                    } else {
+                        f.criteriaSatisfied = true;
+                        f.criteriaDetails = ['No criteria specified'];
+                    }
+                });
             });
 
             this.sections = sectionList;
@@ -199,6 +367,9 @@ export default class WoDynamicForm extends LightningElement {
                     val = el.checked;
                 }
                 model[field.fieldApiName] = val;
+
+                // Keep the section model in sync with current UI value for downstream criteria & review payload
+                field.value = val;
             });
         });
         return model;
@@ -208,31 +379,42 @@ export default class WoDynamicForm extends LightningElement {
     buildReviewPayload() {
         const payload = {
             sections: this.sections.map(sec => {
-                return {
+                // Include section rules in payload
+                const secPayload = {
                     name: sec.name,
-                    fields: sec.fields.map(f => {
-                        const el = this.template.querySelector(`[data-field-name="${f.fieldApiName}"]`);
-                        let val = f.value ?? null;
-                        if (el) {
-                            val = el.type === 'checkbox' ? el.checked : (el.value ?? el?.dataset?.value ?? null);
-                        }
-                        return {
-                            section: f.section,
-                            fieldApiName: f.fieldApiName,
-                            fieldType: f.fieldType,
-                            comboboxOptions: f.comboboxOptions,
-                            isText: f.isText,
-                            isTextArea: f.isTextArea,
-                            isNumber: f.isNumber,
-                            isDate: f.isDate,
-                            isDateTime: f.isDateTime,
-                            isCheckbox: f.isCheckbox,
-                            isPicklist: f.isPicklist,
-                            isOther: f.isOther,
-                            value: val
-                        };
-                    })
+                    sectionOrder: sec.sectionOrder,
+                    criteriaSatisfied: sec.criteriaSatisfied,
+                    criteriaDetails: sec.criteriaDetails,
+                    fields: []
                 };
+
+                secPayload.fields = sec.fields.map(f => {
+                    const el = this.template.querySelector(`[data-field-name="${f.fieldApiName}"]`);
+                    let val = f.value ?? null;
+                    if (el) {
+                        val = el.type === 'checkbox' ? el.checked : (el.value ?? el?.dataset?.value ?? null);
+                    }
+                    return {
+                        section: f.section,
+                        fieldApiName: f.fieldApiName,
+                        fieldType: f.fieldType,
+                        comboboxOptions: f.comboboxOptions,
+                        isText: f.isText,
+                        isTextArea: f.isTextArea,
+                        isNumber: f.isNumber,
+                        isDate: f.isDate,
+                        isDateTime: f.isDateTime,
+                        isCheckbox: f.isCheckbox,
+                        isPicklist: f.isPicklist,
+                        isOther: f.isOther,
+                        value: val,
+                        fieldOrder: f.fieldOrder,
+                        criteriaSatisfied: f.criteriaSatisfied,
+                        criteriaDetails: f.criteriaDetails
+                    };
+                });
+
+                return secPayload;
             })
         };
 
